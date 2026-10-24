@@ -1,7 +1,6 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 import type { CatalogFood, CatalogIngredient } from "@/lib/food-catalog";
 
 type Draft = {
@@ -32,16 +31,41 @@ function optionalNumber(value: string): number | null {
 }
 
 export default function FoodManager({
-  foods,
-  ingredients,
+  foods: initialFoods,
+  ingredients: initialIngredients,
 }: {
   foods: CatalogFood[];
   ingredients: CatalogIngredient[];
 }) {
-  const router = useRouter();
+  const [foods, setFoods] = useState<CatalogFood[]>(initialFoods);
+  const [ingredients, setIngredients] = useState<CatalogIngredient[]>(initialIngredients);
   const [draft, setDraft] = useState<Draft>(empty);
   const [message, setMessage] = useState<{ kind: "error" | "ok"; text: string } | null>(null);
   const [pending, setPending] = useState(false);
+  const [search, setSearch] = useState("");
+
+  async function load(term = search) {
+    const url = term.trim()
+      ? `/api/admin/foods?q=${encodeURIComponent(term.trim())}`
+      : "/api/admin/foods";
+    const data = await fetch(url).then((r) => r.json());
+    setFoods(data.foods ?? []);
+    setIngredients(data.ingredients ?? []);
+  }
+
+  // The search runs in the database, so it is debounced rather than fired on
+  // every keystroke. The first render already has the full catalog from the
+  // server, so there is nothing to fetch until the term changes.
+  const firstRender = useRef(true);
+  useEffect(() => {
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    const timer = setTimeout(() => load(search), 250);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
   async function save(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -75,7 +99,7 @@ export default function FoodManager({
       text: data.warning ?? (editing ? "Food updated." : "Food added."),
     });
     setDraft(empty);
-    router.refresh();
+    load();
   }
 
   async function remove(food: CatalogFood) {
@@ -94,7 +118,7 @@ export default function FoodManager({
       return;
     }
     setMessage({ kind: "ok", text: `${food.name} deleted.` });
-    router.refresh();
+    load();
   }
 
   function edit(food: CatalogFood) {
@@ -229,52 +253,93 @@ export default function FoodManager({
       </section>
 
       <section>
-        <h2 className="mb-4 font-medium">Catalog ({foods.length})</h2>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[42rem] text-sm">
-            <thead className="border-b border-zinc-200 text-left text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
-              <tr>
-                <th className="py-2 pr-4 font-medium">Food</th>
-                <th className="py-2 pr-4 font-medium">kcal</th>
-                <th className="py-2 pr-4 font-medium">Ingredients</th>
-                <th className="py-2 pr-4 font-medium">Allergens</th>
-                <th className="py-2 font-medium"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {foods.map((f) => (
-                <tr key={f.food_id} className="border-b border-zinc-100 dark:border-zinc-900">
-                  <td className="py-2 pr-4">{f.name}</td>
-                  <td className="py-2 pr-4 tabular-nums">{Math.round(Number(f.calories))}</td>
-                  <td className="py-2 pr-4 text-zinc-600 dark:text-zinc-400">
-                    {f.ingredient_ids.length ? f.ingredient_ids.map(ingredientName).join(", ") : "—"}
-                  </td>
-                  <td className="py-2 pr-4">
-                    {f.allergens.length ? (
-                      <span className="text-amber-700 dark:text-amber-300">{f.allergens.join(", ")}</span>
-                    ) : (
-                      <span className="text-zinc-400">—</span>
-                    )}
-                  </td>
-                  <td className="py-2 text-right whitespace-nowrap">
-                    <button
-                      onClick={() => edit(f)}
-                      className="mr-3 text-xs font-medium underline underline-offset-4"
-                    >
-                      Edit
-                    </button>
-                    <button
-                      onClick={() => remove(f)}
-                      className="text-xs font-medium text-red-700 underline underline-offset-4 dark:text-red-400"
-                    >
-                      Delete
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="font-medium">
+            Catalog ({foods.length}
+            {search.trim() && " matching"})
+          </h2>
+
+          <div className="flex items-center gap-2">
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search food or ingredient…"
+              aria-label="Search foods"
+              className="w-64 rounded-md border border-zinc-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-zinc-900 dark:border-zinc-700 dark:bg-zinc-950 dark:focus:border-zinc-300"
+            />
+            {search.trim() && (
+              <button
+                type="button"
+                onClick={() => setSearch("")}
+                className="text-xs font-medium underline underline-offset-4"
+              >
+                Clear
+              </button>
+            )}
+          </div>
         </div>
+
+        {search.trim() && (
+          <p className="mb-3 text-xs text-zinc-500">
+            Filtered by the database:{" "}
+            <code>
+              WHERE f.name ILIKE &apos;%{search.trim()}%&apos; OR EXISTS (SELECT 1
+              FROM food_ingredients … WHERE i.name ILIKE &apos;%{search.trim()}%&apos;)
+            </code>
+          </p>
+        )}
+        {foods.length === 0 ? (
+          <p className="text-sm text-zinc-500">
+            {search.trim() ? `No food matches “${search.trim()}”.` : "No foods in the catalog yet."}
+          </p>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[42rem] text-sm">
+              <thead className="border-b border-zinc-200 text-left text-zinc-600 dark:border-zinc-800 dark:text-zinc-400">
+                <tr>
+                  <th className="py-2 pr-4 font-medium">Food</th>
+                  <th className="py-2 pr-4 font-medium">kcal</th>
+                  <th className="py-2 pr-4 font-medium">Ingredients</th>
+                  <th className="py-2 pr-4 font-medium">Allergens</th>
+                  <th className="py-2 font-medium"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {foods.map((f) => (
+                  <tr key={f.food_id} className="border-b border-zinc-100 dark:border-zinc-900">
+                    <td className="py-2 pr-4">{f.name}</td>
+                    <td className="py-2 pr-4 tabular-nums">{Math.round(Number(f.calories))}</td>
+                    <td className="py-2 pr-4 text-zinc-600 dark:text-zinc-400">
+                      {f.ingredient_ids.length ? f.ingredient_ids.map(ingredientName).join(", ") : "—"}
+                    </td>
+                    <td className="py-2 pr-4">
+                      {f.allergens.length ? (
+                        <span className="text-amber-700 dark:text-amber-300">{f.allergens.join(", ")}</span>
+                      ) : (
+                        <span className="text-zinc-400">—</span>
+                      )}
+                    </td>
+                    <td className="py-2 text-right whitespace-nowrap">
+                      <button
+                        onClick={() => edit(f)}
+                        className="mr-3 text-xs font-medium underline underline-offset-4"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        onClick={() => remove(f)}
+                        className="text-xs font-medium text-red-700 underline underline-offset-4 dark:text-red-400"
+                      >
+                        Delete
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </section>
     </div>
   );

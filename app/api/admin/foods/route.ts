@@ -36,12 +36,19 @@ function errorCode(err: unknown): unknown {
 }
 
 // GET — the catalog with the ingredients and allergens of each food.
-export async function GET() {
+//
+// ?q= searches the food's name and the names of its ingredients. The
+// filtering is done by the database with ILIKE rather than in the browser, so
+// the page stays correct as the catalog grows and the work happens where the
+// data is.
+export async function GET(request: Request) {
   const { session, error } = await requireAdmin();
   if (error) return error;
 
-  const data = await withUser(session, loadFoodCatalog);
-  return NextResponse.json(data);
+  const term = new URL(request.url).searchParams.get("q")?.trim() ?? "";
+
+  const data = await withUser(session, (q) => loadFoodCatalog(q, term));
+  return NextResponse.json({ ...data, query: term });
 }
 
 // POST — add a food and its ingredients.
