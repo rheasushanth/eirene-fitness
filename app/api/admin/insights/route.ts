@@ -39,14 +39,14 @@ export async function GET() {
   // the groups after, which is the only place a COUNT can be tested.
   const activeThisWeek = `
     SELECT u.user_id, u.full_name,
-           COUNT(*)                           AS workouts_this_week,
+           COUNT(*)                           AS workouts_this_week,  -- last 7 days
            COUNT(DISTINCT w.exercise_id)      AS different_exercises,
            SUM(w.sets * w.reps)               AS total_reps,
            SUM(w.sets * w.reps * w.weight_kg) AS total_volume_kg,
            MAX(w.logged_on)                   AS last_workout
       FROM workout_logs w
       JOIN users u ON u.user_id = w.user_id
-     WHERE w.logged_on >= date_trunc('week', CURRENT_DATE)::date
+     WHERE w.logged_on > CURRENT_DATE - INTERVAL '7 days'
      GROUP BY u.user_id, u.full_name
     HAVING COUNT(*) >= 3
      ORDER BY workouts_this_week DESC, total_volume_kg DESC`;
@@ -55,10 +55,10 @@ export async function GET() {
     const [losing, active, span] = await Promise.all([
       q(losingWeight),
       q(activeThisWeek),
-      // Shown alongside the empty state: if the newest log predates this
-      // week, "nobody trained three times" is about the data, not the query.
+      // Shown alongside the empty state: if the newest log predates the
+      // window, "nobody trained three times" is about the data, not the query.
       q(`SELECT MIN(logged_on) AS oldest, MAX(logged_on) AS newest,
-                date_trunc('week', CURRENT_DATE)::date AS week_start
+                (CURRENT_DATE - INTERVAL '7 days')::date AS week_start
            FROM workout_logs`),
     ]);
     return {

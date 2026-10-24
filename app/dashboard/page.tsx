@@ -33,7 +33,7 @@ export default async function DashboardPage({
 
   // All three run as eirene_user with app.user_id set, so the row-level
   // security policies apply to the dashboard the same as to the API.
-  const [weeks, weighIns, injuries] = await withUser(session, (q) =>
+  const [weeks, weighIns, injuries, recent] = await withUser(session, (q) =>
     Promise.all([
       q<Week>(
       `SELECT week_start, workout_count, exercises_used,
@@ -60,10 +60,23 @@ export default async function DashboardPage({
         ORDER BY i.name`,
         [session.userId]
       ),
+      // The tiles use a rolling seven days rather than the calendar week the
+      // table below is grouped by. A calendar week restarts at midnight on
+      // Monday, so "this week" reads near zero every Monday morning even for
+      // someone training daily. The table keeps calendar weeks, because
+      // comparing one week against the next is what it is for.
+      q<{ workout_count: string; total_volume_kg: string | null }>(
+      `SELECT COUNT(*)                                   AS workout_count,
+              COALESCE(SUM(sets * reps * weight_kg), 0)  AS total_volume_kg
+         FROM workout_logs
+        WHERE user_id = $1
+          AND logged_on > CURRENT_DATE - INTERVAL '7 days'`,
+        [session.userId]
+      ),
     ])
   );
 
-  const thisWeek = weeks.rows[0];
+  const lastSeven = recent.rows[0];
   const peakVolume = weeks.rows.reduce(
     (max, w) => Math.max(max, Number(w.total_volume_kg)),
     0
@@ -91,12 +104,12 @@ export default async function DashboardPage({
 
       <section className="mb-10 grid gap-4 sm:grid-cols-3">
         <Stat
-          label="Workouts this week"
-          value={thisWeek?.workout_count ?? "0"}
+          label="Workouts, last 7 days"
+          value={lastSeven?.workout_count ?? "0"}
         />
         <Stat
-          label="Volume this week"
-          value={`${Number(thisWeek?.total_volume_kg ?? 0).toLocaleString()} kg`}
+          label="Volume, last 7 days"
+          value={`${Number(lastSeven?.total_volume_kg ?? 0).toLocaleString()} kg`}
         />
         <Stat
           label="Injuries recorded"

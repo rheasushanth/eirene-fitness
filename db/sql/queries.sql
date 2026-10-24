@@ -42,7 +42,7 @@ ORDER BY change_kg ASC;
 
 -- ============================================================
 -- 2. GROUP BY with HAVING and ORDER BY
---    Who has trained at least three times this week?
+--    Who has trained at least three times in the last seven days?
 -- ============================================================
 --
 -- WHERE filters rows before grouping (this week's logs only); HAVING filters
@@ -50,23 +50,26 @@ ORDER BY change_kg ASC;
 -- point of the query: a count cannot be tested in WHERE, because the groups
 -- do not exist yet at that stage.
 --
--- date_trunc('week', CURRENT_DATE) is the Monday of the current week, which
--- matches how v_weekly_progress buckets its weeks.
+-- The window is the last seven days rather than the calendar week. A calendar
+-- week restarts at midnight on Monday, so on a Monday morning the answer is
+-- whatever happened that day — for a "have you trained enough lately" question
+-- that is the wrong boundary. v_weekly_progress still buckets by calendar week,
+-- because comparing one week against the next is a different question.
 
 SELECT
     u.user_id,
     u.full_name,
-    COUNT(*)                                   AS workouts_this_week,
+    COUNT(*)                                   AS workouts_last_7_days,
     COUNT(DISTINCT w.exercise_id)              AS different_exercises,
     SUM(w.sets * w.reps)                       AS total_reps,
     SUM(w.sets * w.reps * w.weight_kg)         AS total_volume_kg,
     MAX(w.logged_on)                           AS last_workout
 FROM workout_logs w
 JOIN users u ON u.user_id = w.user_id
-WHERE w.logged_on >= date_trunc('week', CURRENT_DATE)::date
+WHERE w.logged_on > CURRENT_DATE - INTERVAL '7 days'
 GROUP BY u.user_id, u.full_name
 HAVING COUNT(*) >= 3
-ORDER BY workouts_this_week DESC, total_volume_kg DESC;
+ORDER BY workouts_last_7_days DESC, total_volume_kg DESC;
 
 -- ============================================================
 -- 3. Recursive CTE
