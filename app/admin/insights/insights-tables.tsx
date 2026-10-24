@@ -39,14 +39,14 @@ const correlatedSql = `SELECT u.user_id, u.full_name,
  ORDER BY change_kg ASC;`;
 
 const havingSql = `SELECT u.user_id, u.full_name,
-       COUNT(*) AS workouts_this_week,
+       COUNT(*) AS workouts_last_7_days,
        SUM(w.sets * w.reps * w.weight_kg) AS total_volume_kg
   FROM workout_logs w
   JOIN users u ON u.user_id = w.user_id
- WHERE w.logged_on >= date_trunc('week', CURRENT_DATE)::date
+ WHERE w.logged_on > CURRENT_DATE - INTERVAL '7 days'
  GROUP BY u.user_id, u.full_name
 HAVING COUNT(*) >= 3
- ORDER BY workouts_this_week DESC, total_volume_kg DESC;`;
+ ORDER BY workouts_last_7_days DESC, total_volume_kg DESC;`;
 
 function Sql({ children }: { children: string }) {
   return (
@@ -118,7 +118,7 @@ export default function InsightsTables() {
       </section>
 
       <section>
-        <h2 className="mb-1 font-medium">Three or more workouts this week</h2>
+        <h2 className="mb-1 font-medium">Three or more workouts in the last 7 days</h2>
         <p className="mb-3 text-sm text-zinc-600 dark:text-zinc-400">
           <code>WHERE</code> filters rows before grouping;{" "}
           <code>HAVING</code> filters the groups afterwards, which is the only
@@ -128,12 +128,12 @@ export default function InsightsTables() {
 
         {active.length === 0 ? (
           <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900 dark:border-amber-900 dark:bg-amber-950 dark:text-amber-200">
-            <p>Nobody has trained three times this week.</p>
+            <p>Nobody has trained three times in the last seven days.</p>
             {staleData && (
               <p className="mt-1 text-xs">
-                The newest workout is {span?.newest}, and this week began{" "}
-                {span?.week_start} — the seed data predates the current week.
-                Re-run <code>seed.sql</code> to regenerate it relative to today.
+                The newest workout is {span?.newest}, and the window starts{" "}
+                {span?.week_start} — the seed data predates it. Re-run{" "}
+                <code>seed.sql</code> to regenerate it relative to today.
               </p>
             )}
           </div>

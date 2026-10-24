@@ -359,10 +359,16 @@ All five are in `db/sql/queries.sql` with comments. Run each in the editor.
 first. Each subquery references `u.user_id` from the outer query, so it runs
 once per user.
 
-**2. GROUP BY with HAVING (R)** — users with three or more workouts this week.
+**2. GROUP BY with HAVING (R)** — users with three or more workouts in the last seven days.
 
 > `WHERE` filters rows before grouping; `HAVING` filters the groups after. The
 > count cannot be tested in `WHERE` because the groups do not exist yet.
+>
+> The window is a rolling seven days rather than the calendar week. A calendar
+> week restarts at midnight on Monday, so on a Monday morning it answers
+> "today" — the wrong boundary for "have you trained enough lately".
+> `v_weekly_progress` still buckets by calendar week, because comparing one
+> week against the next is a different question.
 
 Both are also on **Admin → Insights**, with the SQL shown beside the results.
 

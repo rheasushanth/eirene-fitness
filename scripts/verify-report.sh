@@ -24,6 +24,21 @@ echo "Eirene — verification tests"
 echo "run at $(date -u '+%Y-%m-%d %H:%M UTC') against $B"
 echo
 
+# Highest workout log id before anything runs. Cleanup deletes only ids above
+# this, so it can never reach the seeded rows.
+BASELINE=$(node --env-file=.env.local -e '
+const { Client } = require("pg");
+(async () => {
+  const c = new Client({ connectionString: process.env.DATABASE_URL });
+  await c.connect();
+  const r = await c.query("SELECT COALESCE(MAX(log_id), 0)::int AS id FROM workout_logs");
+  console.log(r.rows[0].id);
+  await c.end();
+})();
+' 2>/dev/null)
+echo "baseline workout log id: $BASELINE"
+echo
+
 # ------------------------------------------------------------------
 hr; echo "TEST 1  Registration and login"; hr
 EMAIL="report.$(date +%s)@eirene.test"
@@ -197,7 +212,7 @@ echo
 hr; echo "CLEANUP"; hr
 # The tests register an account and log one safe workout. Both are removed so
 # the script can be re-run against the same seed data without it drifting.
-node --env-file=.env.local scripts/verify-cleanup.mjs 2>/dev/null
+node --env-file=.env.local scripts/verify-cleanup.mjs "$BASELINE" 2>/dev/null
 echo
 
 hr
