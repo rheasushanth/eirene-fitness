@@ -19,11 +19,21 @@ function createPool(): Pool {
     throw new Error("DATABASE_URL is not set. Copy .env.example to .env.local and fill it in.");
   }
 
-  // TLS comes from the connection string (Neon appends sslmode=require), and
-  // its certificate validates against Node's trust store, so the certificate
-  // is verified rather than blindly accepted.
+  // TLS is configured here rather than through the connection string. Neon
+  // appends sslmode=require, which the driver currently treats as verify-full
+  // and warns about, since a future major version will downgrade it to
+  // libpq's weaker meaning. Stripping the parameter and asking for a verified
+  // certificate directly keeps today's behaviour, survives that change, and
+  // stops the warning appearing in the dev overlay.
+  const url = new URL(connectionString);
+  url.searchParams.delete("sslmode");
+  url.searchParams.delete("channel_binding");
+
   return new Pool({
-    connectionString,
+    connectionString: url.toString(),
+    // Neon's certificate validates against Node's trust store, so it is
+    // verified rather than blindly accepted.
+    ssl: { rejectUnauthorized: true },
     max: 5,
     idleTimeoutMillis: 30_000,
     connectionTimeoutMillis: 10_000,
